@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 from typing import List
-import json
-from typing import Any
-from ollama import chat
-from dotenv import load_dotenv
 
-load_dotenv()
+from dotenv import load_dotenv
+from openai import OpenAI
+
+# Load Assignments/.env (same layout as week1 scripts).
+load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env")
+
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "qwen-plus")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_ALI_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_API_KIMI_KEY")
+)
 
 BULLET_PREFIX_PATTERN = re.compile(r"^\s*([-*•]|\d+\.)\s+")
 KEYWORD_PREFIXES = (
@@ -16,6 +26,52 @@ KEYWORD_PREFIXES = (
     "action:",
     "next:",
 )
+
+_EXTRACTION_SYSTEM = """You extract actionable todo items from meeting notes or free-form text.
+Return ONLY a JSON array of strings. Each string is one concrete, imperative action item.
+No markdown fences, no commentary. If there are no clear actions, return [].
+Example: ["Book the room for Tuesday", "Send slides to the team"]"""
+
+
+def _parse_json_string_array(raw: str) -> List[str]:
+    """Parse model output into a list of non-empty strings (week1-style JSON handling)."""
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    data = json.loads(text)
+    if not isinstance(data, list):
+        raise ValueError("Model output must be a JSON array")
+    out: List[str] = []
+    for x in data:
+        if isinstance(x, str) and x.strip():
+            out.append(x.strip())
+    return out
+
+
+def extract_action_items_llm(text: str) -> List[str]:
+    """Extract action items using OpenAI-compatible chat API (same client setup as week1)."""
+    if not text.strip():
+        return []
+    if not OPENAI_API_KEY:
+        raise ValueError(
+            "Missing API key. Set OPENAI_API_ALI_KEY (or OPENAI_API_KEY / OPENAI_API_KIMI_KEY)."
+        )
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=BASE_URL)
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": _EXTRACTION_SYSTEM},
+            {"role": "user", "content": text.strip()},
+        ],
+        temperature=0.2,
+    )
+    content = response.choices[0].message.content or "[]"
+    return _parse_json_string_array(content)
 
 
 def _is_action_line(line: str) -> bool:

@@ -104,7 +104,8 @@ def list_action_items(note_id: Optional[int] = None) -> list[sqlite3.Row]:
         return list(cursor.fetchall())
 
 
-def mark_action_item_done(action_item_id: int, done: bool) -> None:
+def mark_action_item_done(action_item_id: int, done: bool) -> bool:
+    """Return True if a row was updated."""
     with get_connection() as connection:
         cursor = connection.cursor()
         cursor.execute(
@@ -112,5 +113,24 @@ def mark_action_item_done(action_item_id: int, done: bool) -> None:
             (1 if done else 0, action_item_id),
         )
         connection.commit()
+        return cursor.rowcount > 0
+
+
+def note_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "content": str(row["content"]),
+        "created_at": str(row["created_at"]),
+    }
+
+
+def action_item_row_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": int(row["id"]),
+        "note_id": row["note_id"],
+        "text": str(row["text"]),
+        "done": bool(row["done"]),
+        "created_at": str(row["created_at"]),
+    }
 
 
