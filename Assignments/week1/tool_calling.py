@@ -3,14 +3,22 @@
 import ast
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
 from dotenv import load_dotenv
-from ollama import chat
+from openai import OpenAI
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 NUM_RUNS_TIMES = 3
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "qwen-plus")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_ALI_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_API_KIMI_KEY")
+)
 
 
 # ==========================
@@ -108,15 +116,21 @@ def extract_tool_call(text: str) -> Dict[str, Any]:
 
 
 def run_model_for_tool_call(system_prompt: str) -> Dict[str, Any]:
-    response = chat(
-        model="llama3.1:8b",
+    if not OPENAI_API_KEY:
+        raise ValueError("Missing API key. Set OPENAI_API_ALI_KEY (or OPENAI_API_KEY / OPENAI_API_KIMI_KEY).")
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=BASE_URL,
+    )
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "Call the tool now."},
         ],
-        options={"temperature": 0.3},
+        temperature=0.3,
     )
-    content = response.message.content
+    content = response.choices[0].message.content or ""
     return extract_tool_call(content)
 
 
@@ -155,7 +169,7 @@ def test_your_prompt(system_prompt: str) -> bool:
         except Exception as exc:
             print(f"Failed to parse tool call: {exc}")
             continue
-        print(call)
+        print("call :", call)
         try:
             actual = execute_tool_call(call)
         except Exception as exc:

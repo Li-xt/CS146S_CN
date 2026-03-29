@@ -1,10 +1,11 @@
 # Acknowledgement:github.com/sweetkruts/cs146s
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from ollama import chat
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 NUM_RUNS_TIMES = 5
 

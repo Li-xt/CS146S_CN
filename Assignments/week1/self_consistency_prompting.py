@@ -3,12 +3,20 @@
 import os
 import re
 from collections import Counter
+from pathlib import Path
 from dotenv import load_dotenv
-from ollama import chat
+from openai import OpenAI
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 NUM_RUNS_TIMES = 5
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "qwen-plus")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_ALI_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_API_KIMI_KEY")
+)
 
 # TODO: Fill this in! Try to get as close to 100% correctness across all runs as possible.
 # 多运行几次，SUCCESS概率较小
@@ -47,18 +55,26 @@ def test_your_prompt(system_prompt: str) -> bool:
 
     Prints "SUCCESS" if the majority answer equals EXPECTED_OUTPUT.
     """
+    if not OPENAI_API_KEY:
+        raise ValueError("Missing API key. Set OPENAI_API_ALI_KEY (or OPENAI_API_KEY / OPENAI_API_KIMI_KEY).")
+
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=BASE_URL,
+    )
+
     answers: list[str] = []
     for idx in range(NUM_RUNS_TIMES):
         print(f"Running test {idx + 1} of {NUM_RUNS_TIMES}")
-        response = chat(
-            model="llama3.1:8b",
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": USER_PROMPT},
             ],
-            options={"temperature": 1},
+            temperature=1,
         )
-        output_text = response.message.content
+        output_text = response.choices[0].message.content or ""
         final_answer = extract_final_answer(output_text)
         print(f"Run {idx + 1} answer: {final_answer}")
         answers.append(final_answer.strip())

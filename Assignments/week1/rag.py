@@ -2,13 +2,22 @@
 
 import os
 import re
+from pathlib import Path
 from typing import List, Callable
 from dotenv import load_dotenv
-from ollama import chat
+from openai import OpenAI
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 NUM_RUNS_TIMES = 5
+
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "qwen-plus")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_ALI_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_API_KIMI_KEY")
+)
 
 DATA_FILES: List[str] = [
     os.path.join(os.path.dirname(__file__), "data", "api_docs.txt"),
@@ -96,20 +105,28 @@ def extract_code_block(text: str) -> str:
 
 def test_your_prompt(system_prompt: str, context_provider: Callable[[List[str]], List[str]]) -> bool:
     """Run up to NUM_RUNS_TIMES and return True if any output matches EXPECTED_OUTPUT."""
+    if not OPENAI_API_KEY:
+        raise ValueError("Missing API key. Set OPENAI_API_KEY (or OPENAI_API_KIMI_KEY / OPENAI_API_ALI_KEY).")
+
+    client = OpenAI(
+        api_key=OPENAI_API_KEY,
+        base_url=BASE_URL,
+    )
+
     context_docs = context_provider(CORPUS)
     user_prompt = make_user_prompt(QUESTION, context_docs)
 
     for idx in range(NUM_RUNS_TIMES):
         print(f"Running test {idx + 1} of {NUM_RUNS_TIMES}")
-        response = chat(
-            model="llama3.1:8b",
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            options={"temperature": 0.0},
+            temperature=0.0,
         )
-        output_text = response.message.content
+        output_text = response.choices[0].message.content or ""
         code = extract_code_block(output_text)
         missing = [s for s in REQUIRED_SNIPPETS if s not in code]
         if not missing:

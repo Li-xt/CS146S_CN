@@ -2,13 +2,29 @@
 
 import os
 import re
+from pathlib import Path
 from typing import Callable, List, Tuple
 from dotenv import load_dotenv
-from ollama import chat
+from openai import OpenAI
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 NUM_RUNS_TIMES = 1
+BASE_URL = os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+MODEL_NAME = os.getenv("OPENAI_MODEL", "qwen-plus")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_ALI_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_API_KIMI_KEY")
+)
+
+if not OPENAI_API_KEY:
+    raise ValueError("Missing API key. Set OPENAI_API_KEY (or OPENAI_API_KIMI_KEY / OPENAI_API_ALI_KEY).")
+
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
+    base_url=BASE_URL,
+)
 
 SYSTEM_PROMPT = """
 You are a coding assistant. Output ONLY a single fenced Python code block that defines
@@ -97,15 +113,15 @@ def evaluate_function(func: Callable[[str], bool]) -> Tuple[bool, List[str]]:
 
 
 def generate_initial_function(system_prompt: str) -> str:
-    response = chat(
-        model="llama3.1:8b",
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": "Provide the implementation now."},
         ],
-        options={"temperature": 0.2},
+        temperature=0.2,
     )
-    return extract_code_block(response.message.content)
+    return extract_code_block(response.choices[0].message.content or "")
 
 
 def your_build_reflexion_context(prev_code: str, failures: List[str]) -> str:
@@ -124,15 +140,15 @@ def apply_reflexion(
 ) -> str:
     reflection_context = build_context(prev_code, failures)
     print(f"REFLECTION CONTEXT: {reflection_context}, {reflexion_prompt}")
-    response = chat(
-        model="llama3.1:8b",
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
         messages=[
             {"role": "system", "content": reflexion_prompt},
             {"role": "user", "content": reflection_context},
         ],
-        options={"temperature": 0.2},
+        temperature=0.2,
     )
-    return extract_code_block(response.message.content)
+    return extract_code_block(response.choices[0].message.content or "")
 
 
 def run_reflexion_flow(
